@@ -1,0 +1,94 @@
+version: '3'
+
+services:
+  influxdb:
+    image: influxdb
+    hostname: influxdb
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb-data:/var/lib/influxdb
+
+  mongodb:
+    image: mongo
+    hostname: mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${DATABASE_NAME}
+      API_DB_USER: ${API_DB_USER}
+      API_DB_PASSWORD: ${API_DB_PASSWORD}
+      EMQX_DB_USER: ${EMQX_DB_USER}
+      EMQX_DB_PASSWORD: ${EMQX_DB_PASSWORD}
+    ports: 
+      - "27017:27017"
+    volumes: 
+      - mongodb-data:/data/db
+      - ./mongo-init.sh:/docker-entrypoint-initdb.d/mongo-init.sh:ro
+
+  emqx:
+    image: emqx/emqx
+    hostname: emqx
+    depends_on: 
+      - mongodb
+    environment: 
+      EMQX_ALLOW_ANONYMOUS: "false"
+      EMQX_LOADED_PLUGINS: "emqx_recon,emqx_retainer,emqx_management,emqx_dashboard,emqx_auth_mongo"
+      EMQX_AUTH__CLIENT__PASSWORD_HASH: "sha256"
+      EMQX_AUTH__MONGO__TYPE: "single"
+      EMQX_AUTH__MONGO__SERVER: "mongodb:27017"
+      EMQX_AUTH__MONGO__LOGIN: ${EMQX_DB_USER}
+      EMQX_AUTH__MONGO__PASSWORD: ${EMQX_DB_PASSWORD}
+      EMQX_AUTH__MONGO__AUTH_SOURCE: "admin"
+      EMQX_AUTH__MONGO__DATABASE: ${DATABASE_NAME}
+      EMQX_AUTH__MONGO__AUTH_QUERY__COLLECTION: "user"
+      EMQX_AUTH__MONGO__AUTH_QUERY__PASSWORD_FIELD: "password"
+      EMQX_AUTH__MONGO__AUTH_QUERY__PASSWORD_HASH: "bcrypt"
+      EMQX_AUTH__MONGO__AUTH_QUERY__SELECTOR: "username=%u"
+      EMQX_AUTH__MONGO__SUPER_QUERY: "off"
+      EMQX_AUTH__MONGO__ACL_QUERY: "on"
+      EMQX_AUTH__MONGO__ACL_QUERY__COLLECTION: "acl"
+      EMQX_AUTH__MONGO__ACL_QUERY__SELECTOR: "username=%u"
+    ports:
+      - "18083:18083"
+      - "1883:1883"
+
+  telegraf:
+    image: telegraf
+    hostname: telegraf
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 20s
+        max_attempts: 3
+    depends_on: 
+      - influxdb
+      - emqx
+    links: 
+      - influxdb
+      - emqx
+    environment:
+      INFLUXDB_URL: ${INFLUXDB_URL}
+      DATABASE_NAME: ${DATABASE_NAME}
+      EMQX_URL: ${EMQX_URL}
+      EMQX_CLIENT_ID: ${EMQX_CLIENT_ID}
+      EMQX_CLIENT_USERNAME: ${EMQX_CLIENT_USERNAME}
+      EMQX_CLIENT_PASSWORD: ${EMQX_CLIENT_PASSWORD}
+    volumes: 
+      - ${PWD}/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+
+  chronograf:
+    image: chronograf
+    hostname: chronograf
+    ports: 
+      - "8888:8888"
+    links: 
+      - influxdb
+    volumes: 
+      - chronograf-data:/var/lib/chronograf
+
+
+volumes:
+  influxdb-data:
+  mongodb-data:
+  chronograf-data:
