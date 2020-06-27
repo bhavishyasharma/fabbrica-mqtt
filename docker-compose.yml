@@ -9,49 +9,24 @@ services:
     volumes:
       - influxdb-data:/var/lib/influxdb
 
-  mongodb:
-    image: mongo
-    hostname: mongodb
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD}
-      MONGO_INITDB_DATABASE: ${DATABASE_NAME}
-      API_DB_USER: ${API_DB_USER}
-      API_DB_PASSWORD: ${API_DB_PASSWORD}
-      EMQX_DB_USER: ${EMQX_DB_USER}
-      EMQX_DB_PASSWORD: ${EMQX_DB_PASSWORD}
-    ports: 
-      - "27017:27017"
-    volumes: 
-      - mongodb-data:/data/db
-      - ./mongo-init.sh:/docker-entrypoint-initdb.d/mongo-init.sh:ro
-
   emqx:
     image: emqx/emqx
     hostname: emqx
-    depends_on: 
-      - mongodb
     environment: 
       EMQX_ALLOW_ANONYMOUS: "false"
-      EMQX_LOADED_PLUGINS: "emqx_recon,emqx_retainer,emqx_management,emqx_dashboard,emqx_auth_mongo"
-      EMQX_AUTH__CLIENT__PASSWORD_HASH: "sha256"
-      EMQX_AUTH__MONGO__TYPE: "single"
-      EMQX_AUTH__MONGO__SERVER: "mongodb:27017"
-      EMQX_AUTH__MONGO__LOGIN: ${EMQX_DB_USER}
-      EMQX_AUTH__MONGO__PASSWORD: ${EMQX_DB_PASSWORD}
-      EMQX_AUTH__MONGO__AUTH_SOURCE: "admin"
-      EMQX_AUTH__MONGO__DATABASE: ${DATABASE_NAME}
-      EMQX_AUTH__MONGO__AUTH_QUERY__COLLECTION: "user"
-      EMQX_AUTH__MONGO__AUTH_QUERY__PASSWORD_FIELD: "password"
-      EMQX_AUTH__MONGO__AUTH_QUERY__PASSWORD_HASH: "bcrypt"
-      EMQX_AUTH__MONGO__AUTH_QUERY__SELECTOR: "username=%u"
-      EMQX_AUTH__MONGO__SUPER_QUERY: "off"
-      EMQX_AUTH__MONGO__ACL_QUERY: "on"
-      EMQX_AUTH__MONGO__ACL_QUERY__COLLECTION: "acl"
-      EMQX_AUTH__MONGO__ACL_QUERY__SELECTOR: "username=%u"
+      EMQX_LOADED_PLUGINS: "emqx_recon,emqx_retainer,emqx_management,emqx_dashboard,emqx_auth_mnesia"
+      EMQX_AUTH__MNESIA__AS: ${EMQX_AUTH_AS}
+      EMQX_AUTH__MNESIA__PASSWORD_HASH: "sha256"
+      EMQX_AUTH__MNESIA__1__LOGIN: ${EMQX_ADMIN_USERNAME}
+      EMQX_AUTH__MNESIA__1__PASSWORD: ${EMQX_ADMIN_PASSWORD}
+      EMQX_AUTH__MNESIA__1__IS_SUPERUSER: "true"
+      EMQX_AUTH__MNESIA__2__LOGIN: ${TELEGRAF_EMQX_CLIENT_ID}
+      EMQX_AUTH__MNESIA__2__PASSWORD: ${TELEGRAF_EMQX_PASSWORD}
+      EMQX_AUTH__MNESIA__2__IS_SUPERUSER: "false"
     ports:
       - "18083:18083"
       - "1883:1883"
+      - "8081:8081"
 
   telegraf:
     image: telegraf
@@ -69,11 +44,11 @@ services:
       - emqx
     environment:
       INFLUXDB_URL: ${INFLUXDB_URL}
-      DATABASE_NAME: ${DATABASE_NAME}
+      DATABASE_NAME: ${INFLUXDB_DATABASE_NAME}
       EMQX_URL: ${EMQX_URL}
-      EMQX_CLIENT_ID: ${EMQX_CLIENT_ID}
-      EMQX_CLIENT_USERNAME: ${EMQX_CLIENT_USERNAME}
-      EMQX_CLIENT_PASSWORD: ${EMQX_CLIENT_PASSWORD}
+      EMQX_CLIENT_ID: ${TELEGRAF_EMQX_CLIENT_ID}
+      EMQX_CLIENT_USERNAME: ${TELEGRAF_EMQX_CLIENT_ID}
+      EMQX_CLIENT_PASSWORD: ${TELEGRAF_EMQX_PASSWORD}
     volumes: 
       - ${PWD}/telegraf.conf:/etc/telegraf/telegraf.conf:ro
 
@@ -87,8 +62,20 @@ services:
     volumes: 
       - chronograf-data:/var/lib/chronograf
 
+  grafana:
+    image: grafana/grafana
+    ports: 
+      - "3000:3000"
+    links: 
+      - influxdb
+    environment: 
+      GF_INSTALL_PLUGINS: "grafana-piechart-panel,grafana-clock-panel,grafana-worldmap-panel,briangann-datatable-panel"
+    volumes: 
+      - grafana-data:/var/lib/grafana
+      - ${PWD}/grafana-plugins:/var/lib/grafana/plugins
+
 
 volumes:
   influxdb-data:
-  mongodb-data:
   chronograf-data:
+  grafana-data:
